@@ -1,0 +1,239 @@
+(function () {
+  if (!window.Game || !Game.ready) { alert('Wait for Cookie Clicker to load first!'); return; }
+  if (window.__kanyeMod) { Game.Notify('Mod already loaded', '', [10, 0]); return; }
+  window.__kanyeMod = true;
+
+  var SHEET = 'https://raw.githubusercontent.com/111111gklglg/C/main/spritesheet.png';
+  var SAVE_KEY = 'kanyeAchSave';
+  var DEFAULT_ICON = [10, 0];
+  var BUILDING_COUNT = 750;
+  var ico = function (c, r) { return [c, r, SHEET]; };
+
+  var CUSTOM = {
+    'I’ma need to see your f**kin hands': [0, 0],
+    'We wasn’t s’posed to make it past twenty-five': [1, 0],
+    'We tryna buy back our forty acres': [2, 0],
+    'Rock forever': [3, 0],
+    'Enter the kingdom': [0, 1],
+    'Like “Mad rich alert”': [1, 1],
+    'I know I’m preachin’ to the congregation': [2, 1],
+    'Baby, I’m magic, tada': [3, 1],
+    'Put your hands to the constellations': [0, 2],
+    'But is it cool to rap about gold': [1, 2],
+    'A monster about to come alive again': [2, 2],
+    'It’s the magic hour': [3, 2],
+    'Ah!': [0, 3],
+    'And out of all the colors that’ll fill up the skies': [1, 3],
+    'And refresh the page': [2, 3],
+    'You can’t catch my hustle': [3, 3],
+    'Have you lost your mind?': [0, 4],
+    'You love me for me': [1, 4],
+    'Th-th-th-th-th-th…': [2, 4],
+    'But we still winning': [3, 4],
+    'Things ain’t always set in stone': [0, 5],
+    'In the streets': [1, 5]
+  };
+
+  var M = function (b) { return Game.Objects[b] && Game.Objects[b].minigame; };
+  var fmt = function (n) { return n.toLocaleString('en-US'); };
+
+  /* ---------- vanilla lookup helpers (used for grouping + icons) ---------- */
+  var VAN = [];
+  for (var vi in Game.AchievementsById) { VAN.push(Game.AchievementsById[vi]); }
+  var MOVED = { 'Endless cycle': 1, 'Gaseous assets': 1 };
+  var descOf = function (a) { return String(a.baseDesc || a.desc || ''); };
+
+  function vanilla(pred) {
+    return VAN.filter(function (a) {
+      return a && a.pool === 'normal' && !MOVED[a.name] && pred(a);
+    });
+  }
+  function top(list) {
+    return list.reduce(function (m, a) { return (!m || a.order > m.order) ? a : m; }, null);
+  }
+  function byDesc(strict, loose) {
+    return function () {
+      var l = vanilla(function (a) { return strict.test(descOf(a)); });
+      if (l.length || !loose) return l;
+      return vanilla(function (a) { return loose.test(descOf(a)); });
+    };
+  }
+
+  /* ---------- groups: where each new achievement sits in the list ---------- */
+  var GROUPS = {};
+  var late = 100000;
+  function group(key, find, fallback, moved) {
+    if (!GROUPS[key]) GROUPS[key] = { find: find, fallback: fallback, moved: moved || [], n: 0, ready: false };
+    return key;
+  }
+  function bGroup(name) {
+    var ob = Game.Objects[name];
+    return group('b:' + name, function () {
+      return vanilla(function (a) {
+        var b = a.buildingTie;
+        return b && (b === ob || b === name || b.name === name);
+      });
+    }, ob ? 1000 + ob.id * 100 + 50 : null, name === 'Bank' ? ['Gaseous assets'] : []);
+  }
+  function resolve(key) {
+    var g = GROUPS[key];
+    if (g.ready) return g;
+    g.ready = true;
+    var t = top(g.find());
+    if (t) { g.base = t.order; g.icon = t.icon; g.src = 'vanilla'; }
+    else if (g.fallback != null) { g.base = g.fallback; g.src = 'fallback'; }
+    else if (g.moved.length && Game.Achievements[g.moved[0]]) {
+      g.base = Game.Achievements[g.moved[0]].order - 0.0001; g.src = 'moved';
+    }
+    else { late += 10; g.base = late; g.src = 'end'; }
+    g.moved.forEach(function (n) {
+      var a = Game.Achievements[n];
+      if (a) { a.pool = 'normal'; a.order = g.base + 0.0001 * (++g.n); }
+    });
+    return g;
+  }
+  function iconFrom(src) {
+    if (!src) return null;
+    if (typeof src === 'string') return Game.Achievements[src] ? Game.Achievements[src].icon : null;
+    var t = top(vanilla(function (a) { return src.test(descOf(a)); }));
+    return t ? t.icon : null;
+  }
+
+  /* ---------- achievement definitions ---------- */
+  var ACHS = [];
+  function add(name, desc, cond, shadow, gkey, iconSrc) {
+    ACHS.push({ name: name, desc: desc, cond: cond, shadow: !!shadow, gkey: gkey, iconSrc: iconSrc });
+  }
+
+  // Buildings
+  function bld(obj, name, count, desc) {
+    count = count || BUILDING_COUNT;
+    var ob = Game.Objects[obj];
+    var plural = obj === 'You' ? 'Yous' : (ob ? ob.plural : obj.toLowerCase() + 's');
+    add(name, desc || ('Own <b>' + fmt(count) + '</b> ' + plural + '.'),
+        function () { return Game.Objects[obj] && Game.Objects[obj].amount >= count; },
+        false, bGroup(obj));
+  }
+  bld('Cursor', 'I’ma need to see your f**kin hands', 1100, 'Own <b>1,100</b> cursors.');
+  bld('Grandma', 'We wasn’t s’posed to make it past twenty-five');
+  bld('Farm', 'We tryna buy back our forty acres');
+  bld('Mine', 'Rock forever');
+  bld('Factory', 'Enter the kingdom');
+  bld('Bank', 'Like “Mad rich alert”');
+  bld('Temple', 'I know I’m preachin’ to the congregation');
+  bld('Wizard tower', 'Baby, I’m magic, tada');
+  bld('Shipment', 'Put your hands to the constellations');
+  bld('Alchemy lab', 'But is it cool to rap about gold');
+  bld('Portal', 'A monster about to come alive again');
+  bld('Time machine', 'It’s the magic hour');
+  bld('Antimatter condenser', 'Ah!', null, "I hate this building, there's no good lyrics for it");
+  bld('Prism', 'And out of all the colors that’ll fill up the skies');
+  bld('Chancemaker', 'But we still winning');
+  bld('Fractal engine', 'Th-th-th-th-th-th…');
+  bld('Javascript console', 'And refresh the page');
+  bld('Idleverse', 'You can’t catch my hustle');
+  bld('Cortex baker', 'Have you lost your mind?');
+  bld('You', 'You love me for me');
+
+  // Wrinklers
+  var gWrinkler = group('wrinklers', byDesc(/pop\s*<b>[\d,]+<\/b>\s*wrinkler/i, /wrinkler/i));
+  [[500, 'You’re my stress, you’re my masseuse'],
+   [1000, 'You’re my devil, you’re my angel'],
+   [2500, 'And I know that you’re somewhere doing your thing'],
+   [5000, 'And I was satisfied'],
+   [10000, 'At a certain point, I had to stop asking questions', true]].forEach(function (a) {
+    add(a[1], 'Pop <b>' + fmt(a[0]) + '</b> wrinklers.',
+        function () { return Game.wrinklersPopped >= a[0]; }, a[2], gWrinkler);
+  });
+
+  // Reindeer
+  var gReindeer = group('reindeer', byDesc(/<b>[\d,]+<\/b>\s*reindeer/i, /reindeer/i));
+  [[500, 'Merry Christmas to all'],
+   [1000, 'It feels like Christmas officially'],
+   [2500, 'Top of my Christmas tree'],
+   [5000, 'And we wipin’ snow up off the windshield'],
+   [10000, 'I’m like bad Santa though', true]].forEach(function (a) {
+    add(a[1], 'Click <b>' + fmt(a[0]) + '</b> reindeer.',
+        function () { return Game.reindeerClicked >= a[0]; }, a[2], gReindeer);
+  });
+
+  // Buildings owned
+  var gOwned = group('owned', byDesc(/<b>[\d,]+<\/b>\s*buildings/i));
+  add('Things ain’t always set in stone', 'Own <b>12,500</b> buildings.',
+      function () { return Game.BuildingsOwned >= 12500; }, false, gOwned);
+  add('In the streets', 'Own <b>15,000</b> buildings.',
+      function () { return Game.BuildingsOwned >= 15000; }, false, gOwned);
+
+  // Ascensions (Endless cycle gets pulled into this group)
+  var gAscend = group('ascend', byDesc(/ascend\s*<b>[\d,]+<\/b>\s*times?/i), null, ['Endless cycle']);
+  add('Lost in this plastic life', 'Ascend <b>2,500</b> times.',
+      function () { return Game.resets >= 2500; }, false, gAscend);
+  add('Break out', 'Ascend <b>5,000</b> times.',
+      function () { return Game.resets >= 5000; }, false, gAscend);
+  add('Man, I tried to stop', 'Ascend <b>10,000</b> times.',
+      function () { return Game.resets >= 10000; }, true, gAscend);
+
+  // Minigames (each sits with its building; Gaseous assets joins the Bank group)
+  add('And it’s rich', 'Make <b>$315,360,000</b> in stock market profits.',
+      function () { var m = M('Bank'); return m && m.profit >= 315360000; },
+      true, bGroup('Bank'), 'Gaseous assets');
+  add('I am a God', 'Cast <b>9,999</b> spells.',
+      function () { var m = M('Wizard tower'); return m && m.spellsCastTotal >= 9999; },
+      false, bGroup('Wizard tower'), /spells?\b/i);
+  add('But can I please give her these flowers?', 'Harvest <b>10,000</b> mature plants.',
+      function () { var m = M('Farm'); return m && m.harvestsTotal >= 10000; },
+      false, bGroup('Farm'), /harvest|garden/i);
+
+  /* ---------- create achievements ---------- */
+  var saved = {};
+  try { saved = JSON.parse(localStorage.getItem(SAVE_KEY)) || {}; } catch (e) {}
+
+  var made = [];
+  ACHS.forEach(function (d) {
+    if (Game.Achievements[d.name]) return;
+    var g = resolve(d.gkey);
+    var icon = CUSTOM[d.name] ? ico(CUSTOM[d.name][0], CUSTOM[d.name][1])
+             : (iconFrom(d.iconSrc) || g.icon || DEFAULT_ICON);
+    var a = new Game.Achievement(d.name, d.desc, icon);
+    a.dname = a.baseName = d.name;
+    a.desc = a.baseDesc = a.ddesc = d.desc;
+    a.order = g.base + 0.0001 * (++g.n);
+    a.cond = d.cond;
+    if (d.shadow) a.pool = 'shadow';
+    if (saved[d.name]) a.won = 1;
+    made.push(a);
+  });
+
+  ['Endless cycle', 'Gaseous assets'].forEach(function (n) {
+    if (Game.Achievements[n]) Game.Achievements[n].pool = 'normal';
+  });
+
+  try {
+    console.log('[Kanye mod] group placement:', Object.keys(GROUPS).map(function (k) {
+      return k + ' -> ' + GROUPS[k].src;
+    }).join(', '));
+  } catch (e) {}
+
+  var owned = 0;
+  for (var k in Game.Achievements) { if (Game.Achievements[k].won) owned++; }
+  Game.AchievementsOwned = owned;
+  Game.recalculateGains = 1;
+
+  Game.registerHook('check', function () {
+    made.forEach(function (a) {
+      var ok = false;
+      try { ok = !a.won && a.cond(); } catch (e) {}
+      if (ok) {
+        Game.Win(a.name);
+        saved[a.name] = 1;
+        try { localStorage.setItem(SAVE_KEY, JSON.stringify(saved)); } catch (e) {}
+      }
+    });
+  });
+
+  Game.registerHook('reset', function (hard) {
+    if (hard) { try { localStorage.removeItem(SAVE_KEY); } catch (e) {} }
+  });
+
+  Game.Notify('Mod loaded', made.length + ' new achievements added', [10, 0]);
+})();
